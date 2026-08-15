@@ -457,12 +457,16 @@ async def main():
     print("Starting Telegram Live Stream Participant Tracker (Dual Engine)...")
     print("=" * 60)
 
-    await bot_client.start(bot_token=BOT_TOKEN)
+    if not bot_client.is_connected():
+        await bot_client.start(bot_token=BOT_TOKEN)
     bot_me = await bot_client.get_me()
     print(f"[UI Bot Online]  : @{bot_me.username} ({bot_me.first_name})")
 
     print("[Stream Monitor] : Connecting User Account to monitor voice/video streams...")
-    await user_client.start()
+    if not user_client.is_connected():
+        await user_client.connect()
+        if not await user_client.is_user_authorized():
+            await user_client.start()
     user_me = await user_client.get_me()
     print(f"[Stream Monitor] : Connected as {user_me.first_name} (@{user_me.username or 'NoUsername'})")
 
@@ -473,22 +477,27 @@ async def main():
 
     print(f"\n[READY] @{bot_me.username} is listening for commands in Telegram!")
     print("  /stats      - Full Leaderboard & Participation % (Active or Past Stream)")
-    print("  /livestatus - Active stream check")
-    print("  /export     - Download CSV spreadsheet\n")
-
-    poll_task = asyncio.create_task(background_poll_loop(target_entity))
-
     try:
         await asyncio.gather(
             user_client.run_until_disconnected(),
-            bot_client.run_until_disconnected()
+            bot_client.run_until_disconnected(),
+            background_poll_loop(target_entity)
         )
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as e:
-        print(f"[Notice] Client disconnected ({e}). Resetting connection...")
+        print(f"[Notice] Client connection dropped: {e}")
     finally:
-        poll_task.cancel()
+        try:
+            if user_client.is_connected():
+                await user_client.disconnect()
+        except Exception:
+            pass
+        try:
+            if bot_client.is_connected():
+                await bot_client.disconnect()
+        except Exception:
+            pass
 
 async def supervisor():
     while True:
