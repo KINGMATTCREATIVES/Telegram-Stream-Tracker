@@ -484,11 +484,27 @@ async def main():
             bot_client.run_until_disconnected()
         )
     except (KeyboardInterrupt, SystemExit):
-        print("\nStopping tracker...")
-        if tracker.is_call_active():
-            tracker.end_call()
+        raise
+    except Exception as e:
+        print(f"[Notice] Client disconnected ({e}). Resetting connection...")
     finally:
         poll_task.cancel()
 
+async def supervisor():
+    while True:
+        try:
+            await main()
+        except (KeyboardInterrupt, SystemExit):
+            print("\nTracker stopped by user.")
+            if tracker.is_call_active():
+                tracker.end_call()
+            break
+        except Exception as e:
+            print(f"[Auto-Recover] Connection interrupted: {e}. Reconnecting in 5s...")
+            await asyncio.sleep(5)
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(supervisor())
+    except (KeyboardInterrupt, SystemExit):
+        pass
