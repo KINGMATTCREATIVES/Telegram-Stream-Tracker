@@ -5,11 +5,24 @@ env/
 __pycache__/
 *.py[cod]
 
-# Sensitive Telegram credentials & session files
+# Environment variables & secrets
+.env
+.env.local
+.env.*.local
+
+# Telegram user session files
 *.session
 *.session-journal
 
-# Temporary files
+# Database
+*.db
+*.sqlite3
+
+# Reports & exports
+reports/*.csv
+!reports/.gitkeep
+
+# Temporary files & OS files
 *.tmp
 .DS_Store
 Thumbs.db
