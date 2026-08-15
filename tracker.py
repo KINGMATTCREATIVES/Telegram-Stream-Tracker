@@ -22,14 +22,15 @@ import config
 import db
 
 # Automatically restore session file if provided via SESSION_B64 environment variable (for Koyeb/Cloud)
-SESSION_B64 = os.getenv("SESSION_B64", getattr(config, "SESSION_B64", ""))
-if SESSION_B64 and not os.path.exists("tracker_session.session"):
+SESSION_B64 = os.getenv("SESSION_B64", getattr(config, "SESSION_B64", "")).strip().strip("'").strip('"')
+if SESSION_B64:
     try:
+        decoded_bytes = base64.b64decode(SESSION_B64)
         with open("tracker_session.session", "wb") as f:
-            f.write(base64.b64decode(SESSION_B64))
-        print("[Session Loader] Restored tracker_session.session from SESSION_B64 environment variable.")
+            f.write(decoded_bytes)
+        print(f"[Session Loader] Successfully restored tracker_session.session ({len(decoded_bytes)} bytes) from SESSION_B64.")
     except Exception as e:
-        print(f"[Session Loader Warning] Could not decode SESSION_B64: {e}")
+        print(f"[Session Loader Error] Could not decode SESSION_B64: {e}")
 
 API_ID = int(os.getenv("API_ID", config.API_ID))
 API_HASH = os.getenv("API_HASH", config.API_HASH)
@@ -547,7 +548,16 @@ async def main():
             if not user_client.is_connected():
                 await user_client.connect()
                 if not await user_client.is_user_authorized():
-                    await user_client.start()
+                    if not sys.stdin or not sys.stdin.isatty():
+                        print("\n" + "=" * 60)
+                        print("[CRITICAL ERROR] Telegram User Account is NOT authorized!")
+                        print("On Koyeb / Railway / Render, you must set the 'SESSION_B64' environment variable.")
+                        print("Generate it on your PC by running: python export_session.py")
+                        print("=" * 60 + "\n")
+                        await asyncio.sleep(60)
+                        continue
+                    else:
+                        await user_client.start()
             user_me = await user_client.get_me()
             print(f"[Stream Monitor] : Connected as {user_me.first_name} (@{user_me.username or 'NoUsername'})")
             break
