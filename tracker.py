@@ -479,10 +479,20 @@ async def try_start_bot():
     except errors.FloodWaitError as e:
         print(f"[Bot Cooldown]   : Telegram rate-limit for new bot login ({e.seconds}s). Running stream monitor via User Account in the meantime...")
         bot_active = False
+        try:
+            if bot_client.is_connected():
+                await bot_client.disconnect()
+        except Exception:
+            pass
         asyncio.create_task(bot_retry_after(e.seconds))
     except Exception as e:
         print(f"[Bot Notice]     : {e}. Running stream monitor via User Account...")
         bot_active = False
+        try:
+            if bot_client.is_connected():
+                await bot_client.disconnect()
+        except Exception:
+            pass
 
 async def bot_retry_after(seconds):
     global bot_active
