@@ -13,6 +13,8 @@ __pycache__/
 # Telegram user session files
 *.session
 *.session-journal
+session_b64.txt
+session_string.txt
 
 # Database
 *.db

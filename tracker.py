@@ -237,7 +237,14 @@ class CallSessionTracker:
 
 tracker = CallSessionTracker()
 
-user_client = TelegramClient("tracker_session", API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
+from telethon.sessions import StringSession
+
+SESSION_STRING = os.getenv("SESSION_STRING", getattr(config, "SESSION_STRING", "")).strip().strip("'").strip('"')
+if SESSION_STRING:
+    user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
+    print("[Session Loader] Initialized Telegram client with compact StringSession.")
+else:
+    user_client = TelegramClient("tracker_session", API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
 bot_client = TelegramClient("bot_service_session", API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
 bot_active = False
 
