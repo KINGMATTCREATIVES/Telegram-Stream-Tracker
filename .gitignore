@@ -1,0 +1,15 @@
+# Virtual environment & Python cache
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+
+# Sensitive Telegram credentials & session files
+*.session
+*.session-journal
+
+# Temporary files
+*.tmp
+.DS_Store
+Thumbs.db
