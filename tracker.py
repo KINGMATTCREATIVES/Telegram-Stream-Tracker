@@ -67,6 +67,7 @@ class CallSessionTracker:
         if not self.is_call_active():
             return
         now = datetime.datetime.now(datetime.timezone.utc)
+        state_changed = False
         if user_id not in self.participants:
             self.participants[user_id] = {
                 "name": name,
@@ -76,6 +77,7 @@ class CallSessionTracker:
             }
             uname_str = f" (@{username})" if username else ""
             print(f" [+] JOIN : {name}{uname_str} [ID: {user_id}] at {now.strftime('%H:%M:%S UTC')} (Total: {len(self.participants)})")
+            state_changed = True
         else:
             if name and not name.startswith("Participant ") and not name.startswith("User "):
                 self.participants[user_id]["name"] = name
@@ -86,8 +88,13 @@ class CallSessionTracker:
                 self.participants[user_id]["current_join"] = now
                 uname_str = f" (@{self.participants[user_id]['username']})" if self.participants[user_id]['username'] else ""
                 print(f" [+] REJOIN: {self.participants[user_id]['name']}{uname_str} [ID: {user_id}] at {now.strftime('%H:%M:%S UTC')}")
+                state_changed = True
 
-        db.save_participant_join(self.active_stream_id, user_id, name, username, now)
+        if state_changed:
+            try:
+                db.save_participant_join(self.active_stream_id, user_id, self.participants[user_id]["name"], self.participants[user_id]["username"], now)
+            except Exception as e:
+                print(f"[DB Join Error] {e}")
 
     def register_leave(self, user_id: int):
         if not self.is_call_active():
@@ -100,7 +107,10 @@ class CallSessionTracker:
             session_duration_sec = (now - join_time).total_seconds()
             uname_str = f" (@{self.participants[user_id]['username']})" if self.participants[user_id]['username'] else ""
             print(f" [-] LEAVE: {self.participants[user_id]['name']}{uname_str} at {now.strftime('%H:%M:%S UTC')} (Session: {session_duration_sec/60:.1f} min)")
-            db.save_participant_leave(self.active_stream_id, user_id, now)
+            try:
+                db.save_participant_leave(self.active_stream_id, user_id, now)
+            except Exception as e:
+                print(f"[DB Leave Error] {e}")
 
     def end_call(self):
         if not self.is_call_active():
