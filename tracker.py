@@ -17,8 +17,19 @@ if hasattr(sys.stderr, "reconfigure"):
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+import base64
 import config
 import db
+
+# Automatically restore session file if provided via SESSION_B64 environment variable (for Koyeb/Cloud)
+SESSION_B64 = os.getenv("SESSION_B64", getattr(config, "SESSION_B64", ""))
+if SESSION_B64 and not os.path.exists("tracker_session.session"):
+    try:
+        with open("tracker_session.session", "wb") as f:
+            f.write(base64.b64decode(SESSION_B64))
+        print("[Session Loader] Restored tracker_session.session from SESSION_B64 environment variable.")
+    except Exception as e:
+        print(f"[Session Loader Warning] Could not decode SESSION_B64: {e}")
 
 API_ID = int(os.getenv("API_ID", config.API_ID))
 API_HASH = os.getenv("API_HASH", config.API_HASH)
