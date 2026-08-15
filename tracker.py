@@ -295,6 +295,21 @@ async def send_auto_report(target_chat_str, csv_path):
     except Exception as e:
         print(f"[Auto-Post Warning] Could not send auto-report: {e}")
 
+async def safe_reply(event, text, file=None, **kwargs):
+    """Safely replies to a Telegram event, falling back to plain text if markdown formatting fails."""
+    try:
+        if file:
+            return await event.reply(message=text, file=file, **kwargs)
+        return await event.reply(text, **kwargs)
+    except Exception as e:
+        print(f"[Bot Reply Notice] Formatting error ({e}), retrying without markdown...")
+        try:
+            if file:
+                return await event.reply(message=text, file=file, parse_mode=None)
+            return await event.reply(text, parse_mode=None)
+        except Exception as e2:
+            print(f"[Bot Reply Error] Failed to send reply: {e2}")
+
 # --- IN-TELEGRAM COMMAND HANDLERS ---
 @bot_client.on(events.NewMessage)
 async def bot_command_handler(event):
@@ -302,28 +317,29 @@ async def bot_command_handler(event):
     if not (text.startswith("/") or text.startswith(".")):
         return
 
-    cmd = text.split()[0].lower().replace(".", "/")
-    if "@" in cmd:
-        cmd = cmd.split("@")[0]
+    raw_cmd = text.split()[0].lower().replace(".", "/")
+    cmd = raw_cmd.split("@")[0]
+    print(f"[BOT COMMAND] Received '{raw_cmd}' from chat_id={event.chat_id}")
 
     if cmd in ["/stats", "/report", "/leaderboard"]:
         if tracker.is_call_active():
             stats = tracker.get_current_stats()
             msg = format_report_message(stats, stats["participants"], is_active=True)
-            await event.reply(msg, parse_mode="markdown")
+            await safe_reply(event, msg, parse_mode="markdown")
         else:
             stream_meta, participants = db.get_latest_stream()
             if stream_meta and participants:
                 msg = format_report_message(stream_meta, participants, is_active=False)
-                await event.reply(msg, parse_mode="markdown")
+                await safe_reply(event, msg, parse_mode="markdown")
             else:
-                await event.reply("⚠️ No live stream records found in database yet.", parse_mode="markdown")
+                await safe_reply(event, "⚠️ No live stream records found in database yet.", parse_mode="markdown")
 
     elif cmd in ["/livestatus", "/status"]:
         if tracker.is_call_active():
             stats = tracker.get_current_stats()
             online_count = sum(1 for p in stats["participants"] if p["is_online"])
-            await event.reply(
+            await safe_reply(
+                event,
                 f"🔴 **Live Stream is ACTIVE**\n\n"
                 f"⏱ Elapsed: `{stats['total_min']:.1f} mins`\n"
                 f"👥 Currently online: `{online_count}` participants\n"
@@ -334,19 +350,19 @@ async def bot_command_handler(event):
         else:
             stream_meta, participants = db.get_latest_stream()
             prev_info = f" (Last stream had {len(participants)} participants)" if participants else ""
-            await event.reply(f"⚪️ No live stream is currently active{prev_info}.\nType `/stats` or `/export` to view the last report.", parse_mode="markdown")
+            await safe_reply(event, f"⚪️ No live stream is currently active{prev_info}.\nType `/stats` or `/export` to view the last report.", parse_mode="markdown")
 
     elif cmd in ["/export", "/csv"]:
         if tracker.is_call_active():
             csv_path = tracker.generate_csv()
             if csv_path and os.path.exists(csv_path):
-                await event.reply(file=csv_path, message="📄 Here is the live in-progress participation CSV export.")
+                await safe_reply(event, "📄 Here is the live in-progress participation CSV export.", file=csv_path)
             else:
-                await event.reply("⚠️ No participant data to export yet.")
+                await safe_reply(event, "⚠️ No participant data to export yet.")
         else:
             stream_meta, participants = db.get_latest_stream()
             if stream_meta and stream_meta.get("csv_path") and os.path.exists(stream_meta["csv_path"]):
-                await event.reply(file=stream_meta["csv_path"], message="📄 Here is the latest completed stream CSV report.")
+                await safe_reply(event, "📄 Here is the latest completed stream CSV report.", file=stream_meta["csv_path"])
             elif participants:
                 filename = f"report_latest.csv"
                 filepath = os.path.join(CSV_OUTPUT_DIR, filename)
@@ -355,9 +371,9 @@ async def bot_command_handler(event):
                     writer.writerow(["Rank", "User ID", "Name", "Username", "First Join (UTC)", "Last Leave (UTC)", "Session Count", "Total Duration (Minutes)", "Participation (%)"])
                     for rank, p in enumerate(participants, 1):
                         writer.writerow([rank, p["user_id"], p["name"], p["username"], p["first_join"], p["last_leave"], p["session_count"], f"{p['total_min']:.2f}", f"{p['pct']:.2f}"])
-                await event.reply(file=filepath, message="📄 Here is the latest stream CSV report.")
+                await safe_reply(event, "📄 Here is the latest stream CSV report.", file=filepath)
             else:
-                await event.reply("⚠️ No stream reports found in history.", parse_mode="markdown")
+                await safe_reply(event, "⚠️ No stream reports found in history.", parse_mode="markdown")
 
     elif cmd in ["/help", "/start"]:
         help_text = (
@@ -368,7 +384,7 @@ async def bot_command_handler(event):
             "• `/help` - Show this menu\n\n"
             "_All stats and CSV files are permanently saved even after calls end._"
         )
-        await event.reply(help_text, parse_mode="markdown")
+        await safe_reply(event, help_text, parse_mode="markdown")
 
 # --- USER CLIENT LIVE CALL POLLING & EVENTS ---
 @user_client.on(events.Raw)
