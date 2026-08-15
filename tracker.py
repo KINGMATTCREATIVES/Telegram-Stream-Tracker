@@ -486,13 +486,22 @@ async def try_start_bot():
 
 async def bot_retry_after(seconds):
     global bot_active
-    await asyncio.sleep(seconds + 5)
     try:
-        if not bot_client.is_connected():
-            await bot_client.start(bot_token=BOT_TOKEN)
-        bot_me = await bot_client.get_me()
-        bot_active = True
-        print(f"\n[UI Bot Activated] : @{bot_me.username} is now online in Telegram!")
+        await asyncio.sleep(seconds + 5)
+        while not bot_active:
+            try:
+                if not bot_client.is_connected():
+                    await bot_client.start(bot_token=BOT_TOKEN)
+                bot_me = await bot_client.get_me()
+                bot_active = True
+                print(f"\n[UI Bot Activated] : @{bot_me.username} is now online in Telegram!")
+                break
+            except errors.FloodWaitError as fe:
+                print(f"[Bot Cooldown Extended] Waiting {fe.seconds}s...")
+                await asyncio.sleep(fe.seconds + 5)
+            except Exception as be:
+                print(f"[Bot Retry Wait] {be}. Retrying in 15s...")
+                await asyncio.sleep(15)
     except Exception as e:
         print(f"[Bot Retry Notice] {e}")
 
@@ -502,19 +511,31 @@ async def main():
     print("=" * 60)
 
     print("[Stream Monitor] : Connecting User Account to monitor voice/video streams...")
-    if not user_client.is_connected():
-        await user_client.connect()
-        if not await user_client.is_user_authorized():
-            await user_client.start()
-    user_me = await user_client.get_me()
-    print(f"[Stream Monitor] : Connected as {user_me.first_name} (@{user_me.username or 'NoUsername'})")
+    while True:
+        try:
+            if not user_client.is_connected():
+                await user_client.connect()
+                if not await user_client.is_user_authorized():
+                    await user_client.start()
+            user_me = await user_client.get_me()
+            print(f"[Stream Monitor] : Connected as {user_me.first_name} (@{user_me.username or 'NoUsername'})")
+            break
+        except Exception as e:
+            print(f"[User Client Connect Retry] {e}. Retrying in 5s...")
+            await asyncio.sleep(5)
 
     await try_start_bot()
 
     print(f"\nResolving target chat '{TARGET_CHAT}'...")
-    target_entity = await user_client.get_entity(TARGET_CHAT)
-    title = getattr(target_entity, "title", str(TARGET_CHAT))
-    print(f"[OK] Successfully linked to: {title}")
+    while True:
+        try:
+            target_entity = await user_client.get_entity(TARGET_CHAT)
+            title = getattr(target_entity, "title", str(TARGET_CHAT))
+            print(f"[OK] Successfully linked to: {title}")
+            break
+        except Exception as e:
+            print(f"[Target Resolve Retry] {e}. Retrying in 5s...")
+            await asyncio.sleep(5)
 
     print("\n[READY] Participant tracking active for live calls & streams!")
     print("  Auto-generates attendance CSV reports on stream end.")
@@ -546,6 +567,15 @@ async def main():
             pass
 
 async def supervisor():
+    try:
+        loop = asyncio.get_running_loop()
+        def handle_async_exception(loop, context):
+            msg = context.get("exception", context.get("message"))
+            print(f"[Network/AsyncIO Notice] {msg}")
+        loop.set_exception_handler(handle_async_exception)
+    except Exception:
+        pass
+
     while True:
         try:
             await main()
@@ -555,7 +585,7 @@ async def supervisor():
                 tracker.end_call()
             break
         except Exception as e:
-            print(f"[Auto-Recover] Connection interrupted: {e}. Reconnecting in 10s...")
+            print(f"[Auto-Recover] Connection dropped: {e}. Reconnecting in 10s...")
             await asyncio.sleep(10)
 
 if __name__ == "__main__":
