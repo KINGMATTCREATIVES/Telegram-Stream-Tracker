@@ -237,7 +237,7 @@ class CallSessionTracker:
 
 tracker = CallSessionTracker()
 
-from telethon.sessions import StringSession
+from telethon.sessions import StringSession, MemorySession
 
 SESSION_STRING = os.getenv("SESSION_STRING", getattr(config, "SESSION_STRING", "")).strip().strip("'").strip('"')
 if SESSION_STRING:
@@ -245,7 +245,8 @@ if SESSION_STRING:
     print("[Session Loader] Initialized Telegram client with compact StringSession.")
 else:
     user_client = TelegramClient("tracker_session", API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
-bot_client = TelegramClient("bot_service_session", API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
+
+bot_client = TelegramClient(MemorySession(), API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
 bot_active = False
 
 entity_cache = {}
@@ -343,6 +344,22 @@ async def safe_reply(event, text, file=None, **kwargs):
 @bot_client.on(events.NewMessage)
 async def bot_command_handler(event):
     text = event.raw_text.strip()
+    if not text:
+        return
+
+    # If it's a private chat (DM) and user sends any text without a slash, reply with the menu
+    if event.is_private and not (text.startswith("/") or text.startswith(".")):
+        help_text = (
+            "🤖 **Telegram Live Stream Tracker Bot**\n\n"
+            "• `/stats` or `/report` - Show latest participant leaderboard & participation %\n"
+            "• `/livestatus` - Check if a live stream is active and who's online\n"
+            "• `/export` or `/csv` - Download the CSV participation spreadsheet\n"
+            "• `/help` - Show this menu\n\n"
+            "_All stats and CSV files are permanently saved even after calls end._"
+        )
+        await safe_reply(event, help_text, parse_mode="markdown")
+        return
+
     if not (text.startswith("/") or text.startswith(".")):
         return
 
@@ -515,13 +532,14 @@ async def try_start_bot():
             pass
         asyncio.create_task(bot_retry_after(e.seconds))
     except Exception as e:
-        print(f"[Bot Notice]     : {e}. Running stream monitor via User Account...")
+        print(f"[Bot Notice]     : {e}. Scheduling bot auto-retry in 15s...")
         bot_active = False
         try:
             if bot_client.is_connected():
                 await bot_client.disconnect()
         except Exception:
             pass
+        asyncio.create_task(bot_retry_after(15))
 
 async def bot_retry_after(seconds):
     global bot_active
