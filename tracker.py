@@ -584,7 +584,21 @@ async def main():
                     else:
                         await user_client.start()
             user_me = await user_client.get_me()
-            print(f"[Stream Monitor] : Connected as {user_me.first_name} (@{user_me.username or 'NoUsername'})")
+            if not user_me:
+                if not sys.stdin or not sys.stdin.isatty():
+                    print("\n" + "=" * 60)
+                    print("[CRITICAL NOTICE] User session is not authorized.")
+                    print("Please ensure 'SESSION_STRING' is set in your Railway / Koyeb variables.")
+                    print("=" * 60 + "\n")
+                    await asyncio.sleep(15)
+                    continue
+                else:
+                    await user_client.start()
+                    user_me = await user_client.get_me()
+
+            first_name = getattr(user_me, "first_name", "") or getattr(user_me, "title", "User")
+            uname = getattr(user_me, "username", "") or "NoUsername"
+            print(f"[Stream Monitor] : Connected as {first_name} (@{uname})")
             break
         except Exception as e:
             print(f"[User Client Connect Retry] {e}. Retrying in 5s...")
