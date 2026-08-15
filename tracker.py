@@ -561,20 +561,21 @@ async def main():
     print("  Auto-generates attendance CSV reports on stream end.")
     print("  Permanently persists all sessions to SQLite database.\n")
 
-    tasks = [
-        user_client.run_until_disconnected(),
-        background_poll_loop(target_entity)
-    ]
-    if bot_active:
-        tasks.append(bot_client.run_until_disconnected())
+    poll_task = asyncio.create_task(background_poll_loop(target_entity))
 
+    stop_event = asyncio.Event()
     try:
-        await asyncio.gather(*tasks)
+        await stop_event.wait()
     except (KeyboardInterrupt, SystemExit):
         raise
-    except Exception as e:
-        print(f"[Notice] Client connection dropped: {e}")
+    except BaseException as e:
+        print(f"[Notice] Main loop interrupted ({type(e).__name__}: {e})")
     finally:
+        poll_task.cancel()
+        try:
+            await poll_task
+        except (asyncio.CancelledError, Exception):
+            pass
         try:
             if user_client.is_connected():
                 await user_client.disconnect()
@@ -592,6 +593,8 @@ async def supervisor():
         def handle_async_exception(loop, context):
             msg = context.get("exception", context.get("message"))
             print(f"[Network/AsyncIO Notice] {msg}")
+            with open("crash.log", "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.datetime.now()}] AsyncIO Exception: {context}\n")
         loop.set_exception_handler(handle_async_exception)
     except Exception:
         pass
@@ -604,12 +607,22 @@ async def supervisor():
             if tracker.is_call_active():
                 tracker.end_call()
             break
-        except Exception as e:
-            print(f"[Auto-Recover] Connection dropped: {e}. Reconnecting in 10s...")
-            await asyncio.sleep(10)
+        except BaseException as e:
+            err_msg = f"[{datetime.datetime.now()}] Supervisor caught: {type(e).__name__}: {e}\n"
+            print(f"[Auto-Recover] {err_msg.strip()}. Reconnecting in 5s...")
+            with open("crash.log", "a", encoding="utf-8") as f:
+                f.write(err_msg)
+                import traceback
+                traceback.print_exc(file=f)
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
     try:
         asyncio.run(supervisor())
     except (KeyboardInterrupt, SystemExit):
         pass
+    except BaseException as e:
+        with open("crash.log", "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.datetime.now()}] Top-level crash: {e}\n")
+            import traceback
+            traceback.print_exc(file=f)
