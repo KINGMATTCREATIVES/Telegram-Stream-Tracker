@@ -5,8 +5,7 @@ import asyncio
 import datetime
 import warnings
 from tabulate import tabulate
-from telethon import TelegramClient, events
-from telethon.sessions import MemorySession
+from telethon import TelegramClient, events, errors
 from telethon.tl import types, functions
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -217,7 +216,8 @@ class CallSessionTracker:
 tracker = CallSessionTracker()
 
 user_client = TelegramClient("tracker_session", API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
-bot_client = TelegramClient(MemorySession(), API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
+bot_client = TelegramClient("bot_service_session", API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
+bot_active = False
 
 entity_cache = {}
 
@@ -452,15 +452,38 @@ async def background_poll_loop(target_entity):
 
         await asyncio.sleep(8)
 
+async def try_start_bot():
+    global bot_active
+    try:
+        if not bot_client.is_connected():
+            await bot_client.start(bot_token=BOT_TOKEN)
+        bot_me = await bot_client.get_me()
+        bot_active = True
+        print(f"[UI Bot Online]  : @{bot_me.username} ({bot_me.first_name})")
+    except errors.FloodWaitError as e:
+        print(f"[Bot Cooldown]   : Telegram rate-limit for new bot login ({e.seconds}s). Running stream monitor via User Account in the meantime...")
+        bot_active = False
+        asyncio.create_task(bot_retry_after(e.seconds))
+    except Exception as e:
+        print(f"[Bot Notice]     : {e}. Running stream monitor via User Account...")
+        bot_active = False
+
+async def bot_retry_after(seconds):
+    global bot_active
+    await asyncio.sleep(seconds + 5)
+    try:
+        if not bot_client.is_connected():
+            await bot_client.start(bot_token=BOT_TOKEN)
+        bot_me = await bot_client.get_me()
+        bot_active = True
+        print(f"\n[UI Bot Activated] : @{bot_me.username} is now online in Telegram!")
+    except Exception as e:
+        print(f"[Bot Retry Notice] {e}")
+
 async def main():
     print("=" * 60)
     print("Starting Telegram Live Stream Participant Tracker (Dual Engine)...")
     print("=" * 60)
-
-    if not bot_client.is_connected():
-        await bot_client.start(bot_token=BOT_TOKEN)
-    bot_me = await bot_client.get_me()
-    print(f"[UI Bot Online]  : @{bot_me.username} ({bot_me.first_name})")
 
     print("[Stream Monitor] : Connecting User Account to monitor voice/video streams...")
     if not user_client.is_connected():
@@ -470,19 +493,26 @@ async def main():
     user_me = await user_client.get_me()
     print(f"[Stream Monitor] : Connected as {user_me.first_name} (@{user_me.username or 'NoUsername'})")
 
+    await try_start_bot()
+
     print(f"\nResolving target chat '{TARGET_CHAT}'...")
     target_entity = await user_client.get_entity(TARGET_CHAT)
     title = getattr(target_entity, "title", str(TARGET_CHAT))
     print(f"[OK] Successfully linked to: {title}")
 
-    print(f"\n[READY] @{bot_me.username} is listening for commands in Telegram!")
-    print("  /stats      - Full Leaderboard & Participation % (Active or Past Stream)")
+    print("\n[READY] Participant tracking active for live calls & streams!")
+    print("  Auto-generates attendance CSV reports on stream end.")
+    print("  Permanently persists all sessions to SQLite database.\n")
+
+    tasks = [
+        user_client.run_until_disconnected(),
+        background_poll_loop(target_entity)
+    ]
+    if bot_active:
+        tasks.append(bot_client.run_until_disconnected())
+
     try:
-        await asyncio.gather(
-            user_client.run_until_disconnected(),
-            bot_client.run_until_disconnected(),
-            background_poll_loop(target_entity)
-        )
+        await asyncio.gather(*tasks)
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as e:
@@ -509,8 +539,8 @@ async def supervisor():
                 tracker.end_call()
             break
         except Exception as e:
-            print(f"[Auto-Recover] Connection interrupted: {e}. Reconnecting in 5s...")
-            await asyncio.sleep(5)
+            print(f"[Auto-Recover] Connection interrupted: {e}. Reconnecting in 10s...")
+            await asyncio.sleep(10)
 
 if __name__ == "__main__":
     try:
