@@ -22,6 +22,15 @@ __pycache__/
 reports/*.csv
 !reports/.gitkeep
 
+# SQLite database
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*-shm
+*-wal
+
 # Temporary files & OS files
 *.tmp
 .DS_Store
