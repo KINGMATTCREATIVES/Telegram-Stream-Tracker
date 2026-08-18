@@ -318,16 +318,15 @@ async def send_auto_report(csv_path):
 
         report_text = format_report_message(stream_meta, participants, is_active=False)
 
-        # Collect targets
-        recipients = []
-        if ADMIN_CHAT_ID:
+        # Collect targets from Database first, fallback to config
+        db_recipients = db.get_admin_recipients()
+        recipients = list(db_recipients)
+
+        if not recipients and ADMIN_CHAT_ID:
             for item in str(ADMIN_CHAT_ID).split(","):
                 val = item.strip()
                 if val:
-                    if val.isdigit() or (val.startswith("-") and val[1:].isdigit()):
-                        recipients.append(int(val))
-                    else:
-                        recipients.append(val)
+                    recipients.append(val)
 
         if AUTO_POST_TO_GROUP and TARGET_CHAT not in recipients:
             recipients.append(TARGET_CHAT)
@@ -337,7 +336,8 @@ async def send_auto_report(csv_path):
 
         for target in recipients:
             try:
-                bot_target = await bot_client.get_entity(target)
+                target_val = int(target) if (isinstance(target, str) and (target.isdigit() or (target.startswith("-") and target[1:].isdigit()))) else target
+                bot_target = await bot_client.get_entity(target_val)
                 await bot_client.send_message(bot_target, report_text, parse_mode="markdown")
 
                 if csv_path and os.path.exists(csv_path):
@@ -379,11 +379,15 @@ async def bot_command_handler(event):
     if event.is_private and not (text.startswith("/") or text.startswith(".")):
         help_text = (
             "🤖 **Telegram Live Stream Tracker Bot**\n\n"
+            "**📊 Stream Reports:**\n"
             "• `/stats` or `/report` - Show latest participant leaderboard & participation %\n"
             "• `/livestatus` - Check if a live stream is active and who's online\n"
-            "• `/export` or `/csv` - Download the CSV participation spreadsheet\n"
-            "• `/help` - Show this menu\n\n"
-            "_All stats and CSV files are permanently saved even after calls end._"
+            "• `/export` or `/csv` - Download the CSV participation spreadsheet\n\n"
+            "**👑 Admin Routing Options:**\n"
+            "• `/admins` - View list of admins receiving auto-reports\n"
+            "• `/addadmin @username` - Add an admin to receive reports in DM\n"
+            "• `/removeadmin @username` - Remove an admin from reports\n"
+            "• `/help` - Show this menu"
         )
         await safe_reply(event, help_text, parse_mode="markdown")
         return
@@ -449,14 +453,79 @@ async def bot_command_handler(event):
             else:
                 await safe_reply(event, "⚠️ No stream reports found in history.", parse_mode="markdown")
 
+    elif cmd in ["/admins", "/adminlist"]:
+        db_admins = db.get_admin_recipients()
+        if not db_admins and ADMIN_CHAT_ID:
+            db_admins = [x.strip() for x in str(ADMIN_CHAT_ID).split(",") if x.strip()]
+
+        if db_admins:
+            msg = "👑 **Configured Admin Recipients** (Receiving Post-Stream Reports):\n\n"
+            for idx, a in enumerate(db_admins, 1):
+                msg += f"`#{idx}` {a}\n"
+            msg += "\n_Use `/addadmin @username` or `/removeadmin @username` to manage._"
+            await safe_reply(event, msg, parse_mode="markdown")
+        else:
+            await safe_reply(event, "⚠️ No specific admin recipients configured. Set via `/addadmin @username`.", parse_mode="markdown")
+
+    elif cmd in ["/addadmin", "/setadmin"]:
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            await safe_reply(event, "ℹ️ **Usage**: `/addadmin @username` or `/addadmin <UserID>`\nExample: `/addadmin @KingmattMO`", parse_mode="markdown")
+        else:
+            new_target = parts[1].strip()
+            added_list = []
+            for t in new_target.split(","):
+                t = t.strip()
+                if t:
+                    if not t.startswith("@") and not t.isdigit() and not (t.startswith("-") and t[1:].isdigit()):
+                        t = f"@{t}"
+                    if db.add_admin_recipient(t, added_by=str(event.chat_id)):
+                        added_list.append(t)
+
+            all_admins = db.get_admin_recipients()
+            await safe_reply(
+                event,
+                f"✅ **Admin Recipient Added**: {', '.join(added_list)}\n\n"
+                f"📋 **Current Report Recipients** ({len(all_admins)}):\n" +
+                "\n".join([f"• `{a}`" for a in all_admins]) +
+                "\n\n_Note: Ensure the added admin sends `/start` to @KHkronosbot so Telegram allows private DMs._",
+                parse_mode="markdown"
+            )
+
+    elif cmd in ["/removeadmin", "/deladmin"]:
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            await safe_reply(event, "ℹ️ **Usage**: `/removeadmin @username`\nExample: `/removeadmin @username`", parse_mode="markdown")
+        else:
+            target_to_remove = parts[1].strip()
+            removed = db.remove_admin_recipient(target_to_remove)
+            if not removed and not target_to_remove.startswith("@"):
+                removed = db.remove_admin_recipient(f"@{target_to_remove}")
+
+            all_admins = db.get_admin_recipients()
+            if removed:
+                await safe_reply(
+                    event,
+                    f"🗑 **Removed**: `{target_to_remove}`\n\n"
+                    f"📋 **Remaining Report Recipients** ({len(all_admins)}):\n" +
+                    ("\n".join([f"• `{a}`" for a in all_admins]) if all_admins else "_None (will use default config)_"),
+                    parse_mode="markdown"
+                )
+            else:
+                await safe_reply(event, f"⚠️ `{target_to_remove}` was not found in the admin list.\nType `/admins` to view the list.", parse_mode="markdown")
+
     elif cmd in ["/help", "/start"]:
         help_text = (
             "🤖 **Telegram Live Stream Tracker Bot**\n\n"
+            "**📊 Stream Reports:**\n"
             "• `/stats` or `/report` - Show latest participant leaderboard & participation %\n"
             "• `/livestatus` - Check if a live stream is active and who's online\n"
-            "• `/export` or `/csv` - Download the CSV participation spreadsheet\n"
-            "• `/help` - Show this menu\n\n"
-            "_All stats and CSV files are permanently saved even after calls end._"
+            "• `/export` or `/csv` - Download the CSV participation spreadsheet\n\n"
+            "**👑 Admin Routing Options:**\n"
+            "• `/admins` - View list of admins receiving auto-reports\n"
+            "• `/addadmin @username` - Add an admin to receive reports in DM\n"
+            "• `/removeadmin @username` - Remove an admin from reports\n"
+            "• `/help` - Show this menu"
         )
         await safe_reply(event, help_text, parse_mode="markdown")
 

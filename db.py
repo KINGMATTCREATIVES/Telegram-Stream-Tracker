@@ -56,6 +56,41 @@ def init_db():
         )
         """)
 
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS admin_recipients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target TEXT UNIQUE,
+            added_by TEXT,
+            added_at TEXT
+        )
+        """)
+
+def get_admin_recipients():
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT target FROM admin_recipients ORDER BY id ASC")
+        return [row["target"] for row in c.fetchall()]
+
+def add_admin_recipient(target, added_by="Owner"):
+    target = target.strip()
+    if not target:
+        return False
+    with get_connection() as conn:
+        c = conn.cursor()
+        now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        try:
+            c.execute("INSERT OR IGNORE INTO admin_recipients (target, added_by, added_at) VALUES (?, ?, ?)", (target, str(added_by), now_str))
+            return True
+        except Exception:
+            return False
+
+def remove_admin_recipient(target):
+    target = target.strip()
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM admin_recipients WHERE LOWER(target) = LOWER(?) OR target = ?", (target, target))
+        return c.rowcount > 0
+
 def save_stream_start(stream_id, call_id, chat_title, start_time_dt):
     with get_connection() as conn:
         c = conn.cursor()
