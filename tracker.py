@@ -465,19 +465,35 @@ async def background_poll_loop(target_entity):
                     chat_title = getattr(target_entity, "title", str(TARGET_CHAT))
                     tracker.start_call(group_call, chat_title)
 
-                participants_res = await user_client(functions.phone.GetGroupParticipantsRequest(
-                    call=group_call,
-                    ids=[],
-                    sources=[],
-                    offset="",
-                    limit=200
-                ))
-
                 active_uids = set()
-                user_dict = {u.id: u for u in getattr(participants_res, "users", [])}
-                chat_dict = {c.id: c for c in getattr(participants_res, "chats", [])}
+                user_dict = {}
+                chat_dict = {}
 
-                for p in participants_res.participants:
+                offset = ""
+                all_participants = []
+                while True:
+                    participants_res = await user_client(functions.phone.GetGroupParticipantsRequest(
+                        call=group_call,
+                        ids=[],
+                        sources=[],
+                        offset=offset,
+                        limit=200
+                    ))
+                    
+                    parts = getattr(participants_res, "participants", [])
+                    all_participants.extend(parts)
+                    for u in getattr(participants_res, "users", []):
+                        user_dict[u.id] = u
+                    for c in getattr(participants_res, "chats", []):
+                        chat_dict[c.id] = c
+
+                    offset = getattr(participants_res, "next_offset", "")
+                    if not offset or not parts:
+                        break
+
+                for p in all_participants:
+                    if getattr(p, "left", False):
+                        continue
                     peer = p.peer
                     pid, name, username = await resolve_peer_info(user_client, peer)
                     if pid:
