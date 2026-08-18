@@ -36,7 +36,9 @@ API_ID = int(os.getenv("API_ID", config.API_ID))
 API_HASH = os.getenv("API_HASH", config.API_HASH)
 BOT_TOKEN = os.getenv("BOT_TOKEN", getattr(config, "BOT_TOKEN", ""))
 TARGET_CHAT = os.getenv("TARGET_CHAT", config.TARGET_CHAT)
-AUTO_POST_REPORT_TO_CHAT = bool(os.getenv("AUTO_POST_REPORT_TO_CHAT", config.AUTO_POST_REPORT_TO_CHAT))
+AUTO_POST_REPORT = bool(os.getenv("AUTO_POST_REPORT", getattr(config, "AUTO_POST_REPORT", True)))
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", getattr(config, "ADMIN_CHAT_ID", "@KingmattMO"))
+AUTO_POST_TO_GROUP = bool(os.getenv("AUTO_POST_TO_GROUP", getattr(config, "AUTO_POST_TO_GROUP", False)))
 CSV_OUTPUT_DIR = os.getenv("CSV_OUTPUT_DIR", config.CSV_OUTPUT_DIR)
 
 os.makedirs(CSV_OUTPUT_DIR, exist_ok=True)
@@ -304,26 +306,52 @@ def format_report_message(stream_meta, participants, is_active=False):
 
     return msg
 
-async def send_auto_report(target_chat_str, csv_path):
-    """Sends the post-stream report and CSV directly into Telegram."""
+async def send_auto_report(csv_path):
+    """Sends the post-stream report and CSV directly to configured admin(s) and/or target chat."""
+    if not AUTO_POST_REPORT:
+        return
+
     try:
         stream_meta, participants = db.get_latest_stream()
         if not stream_meta or not participants:
             return
 
         report_text = format_report_message(stream_meta, participants, is_active=False)
-        bot_target = await bot_client.get_entity(target_chat_str)
-        await bot_client.send_message(bot_target, report_text, parse_mode="markdown")
 
-        if csv_path and os.path.exists(csv_path):
-            await bot_client.send_file(
-                bot_target,
-                csv_path,
-                caption=f"📊 **Final Participation Spreadsheet**\nDuration: {stream_meta.get('duration_sec', 0)/60.0:.1f} mins | Total: {len(participants)} callers"
-            )
-            print(f"[Auto-Post] Successfully sent report and CSV to {target_chat_str}")
+        # Collect targets
+        recipients = []
+        if ADMIN_CHAT_ID:
+            for item in str(ADMIN_CHAT_ID).split(","):
+                val = item.strip()
+                if val:
+                    if val.isdigit() or (val.startswith("-") and val[1:].isdigit()):
+                        recipients.append(int(val))
+                    else:
+                        recipients.append(val)
+
+        if AUTO_POST_TO_GROUP and TARGET_CHAT not in recipients:
+            recipients.append(TARGET_CHAT)
+
+        if not recipients:
+            recipients = [TARGET_CHAT]
+
+        for target in recipients:
+            try:
+                bot_target = await bot_client.get_entity(target)
+                await bot_client.send_message(bot_target, report_text, parse_mode="markdown")
+
+                if csv_path and os.path.exists(csv_path):
+                    await bot_client.send_file(
+                        bot_target,
+                        csv_path,
+                        caption=f"📊 **Final Participation Spreadsheet**\nDuration: {stream_meta.get('duration_sec', 0)/60.0:.1f} mins | Total: {len(participants)} callers"
+                    )
+                print(f"[Auto-Report] Successfully sent report and CSV to: {target}")
+            except Exception as e:
+                print(f"[Auto-Report Notice] Could not send to {target}: {e}")
+                print(f"                     (If sending to a private user, ensure they sent /start to the bot once)")
     except Exception as e:
-        print(f"[Auto-Post Warning] Could not send auto-report: {e}")
+        print(f"[Auto-Report Error] Could not dispatch auto-report: {e}")
 
 async def safe_reply(event, text, file=None, **kwargs):
     """Safely replies to a Telegram event, falling back to plain text if markdown formatting fails."""
@@ -450,8 +478,8 @@ async def raw_event_handler(event):
     elif isinstance(event, types.UpdateGroupCall):
         if getattr(event.call, "duration", None) is not None:
             ended_stream_id, csv_file = tracker.end_call()
-            if AUTO_POST_REPORT_TO_CHAT:
-                asyncio.create_task(send_auto_report(TARGET_CHAT, csv_file))
+            if AUTO_POST_REPORT:
+                asyncio.create_task(send_auto_report(csv_file))
 
 async def background_poll_loop(target_entity):
     while True:
@@ -522,8 +550,8 @@ async def background_poll_loop(target_entity):
             else:
                 if tracker.is_call_active():
                     ended_stream_id, csv_file = tracker.end_call()
-                    if AUTO_POST_REPORT_TO_CHAT:
-                        asyncio.create_task(send_auto_report(TARGET_CHAT, csv_file))
+                    if AUTO_POST_REPORT:
+                        asyncio.create_task(send_auto_report(csv_file))
 
         except Exception as e:
             print(f"[Polling Notice] {type(e).__name__}: {e}")
