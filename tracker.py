@@ -354,19 +354,31 @@ async def send_auto_report(csv_path):
         print(f"[Auto-Report Error] Could not dispatch auto-report: {e}")
 
 async def safe_reply(event, text, file=None, **kwargs):
-    """Safely replies to a Telegram event, falling back to plain text if markdown formatting fails."""
-    try:
-        if file:
-            return await event.reply(message=text, file=file, **kwargs)
-        return await event.reply(text, **kwargs)
-    except Exception as e:
-        print(f"[Bot Reply Notice] Formatting error ({e}), retrying without markdown...")
+    """Safely replies to a Telegram event, handling connection drops and formatting issues."""
+    for attempt in range(2):
         try:
+            if hasattr(event, "client") and event.client and not event.client.is_connected():
+                await event.client.connect()
             if file:
-                return await event.reply(message=text, file=file, parse_mode=None)
-            return await event.reply(text, parse_mode=None)
-        except Exception as e2:
-            print(f"[Bot Reply Error] Failed to send reply: {e2}")
+                return await event.reply(message=text, file=file, **kwargs)
+            return await event.reply(text, **kwargs)
+        except (ConnectionError, OSError) as ce:
+            print(f"[Bot Reply Notice] Connection dropped ({ce}), reconnecting and retrying...")
+            try:
+                if hasattr(event, "client") and event.client:
+                    await event.client.connect()
+            except Exception:
+                pass
+            await asyncio.sleep(1)
+        except Exception as e:
+            print(f"[Bot Reply Notice] Formatting error ({e}), retrying without markdown...")
+            try:
+                if file:
+                    return await event.reply(message=text, file=file, parse_mode=None)
+                return await event.reply(text, parse_mode=None)
+            except Exception as e2:
+                print(f"[Bot Reply Error] Failed to send reply: {e2}")
+            break
 
 # --- IN-TELEGRAM COMMAND HANDLERS ---
 @bot_client.on(events.NewMessage)
