@@ -2,9 +2,57 @@ import sqlite3
 import datetime
 import os
 
-DB_PATH = "tracker.db"
+DB_PATH = os.getenv("DB_PATH", "tracker.db")
+
+SEED_STREAM_ID = "stream_20260814_201200_-5734923756965228090"
+SEED_PARTICIPANTS = [
+    (1067204907, "Matthew Ọbańlá", "KingmattMO", "20:12:00", "20:20:00", 1, 480.0, 8.00, 100.00),
+    (1187478939, "Esther Olajide", "toluwa_nisola", "20:12:00", "20:20:00", 1, 480.0, 8.00, 100.00),
+    (1633978817, "Sis Damilola Oladipupo", "", "20:12:01", "20:20:00", 1, 478.8, 7.98, 99.79),
+    (1568346316, "Bro Arthur Ogodo", "", "20:12:01", "20:20:00", 1, 478.8, 7.98, 99.79),
+    (5021886681, "Adekunle Philip KH", "philipecclesia", "20:12:01", "20:20:00", 1, 478.8, 7.98, 99.79),
+    (6154808428, "Bro dare", "Daiveedladray", "20:12:01", "20:20:00", 1, 478.8, 7.98, 99.79),
+    (1623337363, "Titilayo Rosiji", "titilee82", "20:12:01", "20:20:00", 1, 478.8, 7.98, 99.79),
+    (1055188344, "Bro Isaac Oladipupo", "Olaking1", "20:12:01", "20:20:00", 1, 478.8, 7.98, 99.79),
+    (1198580304, "Sis Esther Olusola", "", "20:12:01", "20:20:00", 1, 478.8, 7.98, 99.79),
+    (5736853479, "Sis Chinwendu KH", "", "20:12:01", "20:20:00", 1, 478.8, 7.98, 99.79),
+    (1768740489, "Sis Adejoke Kings Hub", "", "20:12:02", "20:20:00", 1, 478.2, 7.97, 99.58),
+    (8452374462, "Bro Daniel Emblem", "", "20:12:02", "20:20:00", 1, 478.2, 7.97, 99.58),
+    (1902811470, "Modupe Lawal", "Oluwaseun_modupe", "20:12:02", "20:20:00", 1, 478.2, 7.97, 99.58),
+    (2050735724, "Sis Bright KH", "Bright633", "20:12:02", "20:20:00", 1, 478.2, 7.97, 99.58),
+    (8579726991, "Favour", "", "20:12:02", "20:20:00", 1, 478.2, 7.97, 99.58),
+    (5450495252, "Sister Titilayo Oladipupo", "Teelahyor5", "20:12:02", "20:20:00", 1, 478.2, 7.97, 99.58),
+    (1733858222, "Sis Adeola Adeoye", "", "20:12:03", "20:20:00", 1, 477.0, 7.95, 99.38),
+    (1192562832, "Dotun Collins", "", "20:12:23", "20:20:00", 1, 457.2, 7.62, 95.21),
+    (549053856, "Leye Rosiji", "OlaleyeR", "20:13:01", "20:20:00", 1, 418.8, 6.98, 87.29),
+    (5198092341, "Damilola Kingshub", "Mo_rireoluwa", "20:13:19", "20:20:00", 1, 400.8, 6.68, 83.54),
+    (6374190576, "Sis Blessing Kings Hub", "Blessingore", "20:12:03", "20:20:00", 3, 379.8, 6.33, 79.17),
+    (5330295657, "Oshilaja Titilayo KH", "", "20:12:08", "20:20:00", 3, 328.8, 5.48, 68.54),
+    (6169690410, "Sis BEKKY KINGS HUB", "beckyz_Artistry", "20:12:02", "20:14:30", 3, 145.2, 2.42, 30.21),
+    (5842104960, "Sis Joy Igele", "", "20:12:02", "20:13:10", 3, 37.2, 0.62, 7.71),
+    (1070491258, "Sia Funke KH", "Beezalel", "20:13:57", "20:14:05", 1, 7.8, 0.13, 1.67),
+    (1074618195, "Bro Bukunmi KH", "adebarigold", "20:13:57", "20:14:05", 1, 7.8, 0.13, 1.67),
+    (2020680914, "TALKINGWILLY", "talkingwilly", "20:13:35", "20:13:40", 1, 4.8, 0.08, 1.04),
+    (7373745365, "Akanbi Folakemi", "", "20:13:00", "20:13:02", 1, 1.8, 0.03, 0.42),
+    (655988041, "Emmanuel", "", "20:14:28", "20:14:30", 1, 1.8, 0.03, 0.42)
+]
+
+def seed_initial_stream(cursor):
+    cursor.execute("""
+    INSERT OR REPLACE INTO streams (stream_id, call_id, chat_title, start_time, end_time, duration_sec, total_participants, csv_path, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+    """, (SEED_STREAM_ID, "-5734923756965228090", "CHURCH IS HERE |||| KINGS' HUB BC", "2026-08-14T20:12:00", "2026-08-14T20:20:00", 480.0, 29, "reports/livestream_attendance_report.csv"))
+
+    for uid, name, uname, fjoin, lleave, scount, tsec, tmin, pct in SEED_PARTICIPANTS:
+        cursor.execute("""
+        INSERT OR REPLACE INTO participants (stream_id, user_id, name, username, first_join, last_leave, session_count, total_sec, total_min, pct, is_online)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        """, (SEED_STREAM_ID, uid, name, uname, fjoin, lleave, scount, tsec, tmin, pct))
 
 def get_connection():
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=60)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
@@ -64,6 +112,10 @@ def init_db():
             added_at TEXT
         )
         """)
+
+        c.execute("SELECT COUNT(*) FROM streams")
+        if c.fetchone()[0] == 0:
+            seed_initial_stream(c)
 
 def get_admin_recipients():
     with get_connection() as conn:
