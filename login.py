@@ -14,3 +14,8 @@ me = client.get_me()
 print(f"\n[SUCCESS] Logged in as: {me.first_name} (@{me.username or 'NoUsername'})")
 print("Session saved to 'tracker_session.session'.")
 print("You can now run tracker.py and it will run autonomously!\n")
+
+try:
+    client.disconnect()
+except Exception:
+    pass
