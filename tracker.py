@@ -21,9 +21,12 @@ import base64
 import config
 import db
 
-# Automatically restore session file if provided via SESSION_B64 environment variable (for Koyeb/Cloud)
+SESSION_STRING = os.getenv("SESSION_STRING", getattr(config, "SESSION_STRING", "")).strip().strip("'").strip('"')
 SESSION_B64 = os.getenv("SESSION_B64", getattr(config, "SESSION_B64", "")).strip().strip("'").strip('"')
-if SESSION_B64:
+
+if SESSION_STRING:
+    print(f"[Session Loader] Configured SESSION_STRING ({len(SESSION_STRING)} chars, prefix: '{SESSION_STRING[:12]}...').")
+elif SESSION_B64:
     try:
         decoded_bytes = base64.b64decode(SESSION_B64)
         with open("tracker_session.session", "wb") as f:
@@ -241,12 +244,12 @@ tracker = CallSessionTracker()
 
 from telethon.sessions import StringSession, MemorySession
 
-SESSION_STRING = os.getenv("SESSION_STRING", getattr(config, "SESSION_STRING", "")).strip().strip("'").strip('"')
 if SESSION_STRING:
     user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
-    print("[Session Loader] Initialized Telegram client with compact StringSession.")
+    print(f"[Session Loader] Initialized Telegram client using SESSION_STRING.")
 else:
     user_client = TelegramClient("tracker_session", API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
+    print(f"[Session Loader] Initialized Telegram client using local 'tracker_session.session' file.")
 
 bot_client = TelegramClient(MemorySession(), API_ID, API_HASH, connection_retries=None, auto_reconnect=True)
 bot_active = False
